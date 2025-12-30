@@ -1153,8 +1153,12 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 	struct stat st;
 	int r;
 	int fd;
+	size_t orig_size = 0;
 	size_t size = 0;
+	size_t reencoded_size = 0;
+	char *orig;
 	char *buf;
+	char *reencoded = NULL;
 
 	if (flags & PATTERN_NOFOLLOW)
 		fd = open_nofollow(fname, O_RDONLY);
@@ -1190,7 +1194,31 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 			close(fd);
 			return -1;
 		}
+
+		if (!try_reencode_to_utf8(buf, size, &reencoded, &reencoded_size) && !is_valid_utf8(buf, size)) {
+			struct conv_attrs ca;
+			convert_attrs(istate, &ca, fname);
+
+			if (ca.working_tree_encoding)
+				reencoded = reencode_string_len(buf, size, "UTF-8", ca.working_tree_encoding, &reencoded_size);
+
+			if (!reencoded) {
+				warning("Ignoring exclude file with unknown encoding: %s", pl->src);
+				free(buf);
+				return -1;
+			}
+		}
+
+		orig_size = size;
+		orig = buf;
+		if (reencoded != NULL) {
+			size = reencoded_size;
+			buf = xmallocz(size);
+			memcpy(buf, reencoded, size);
+			free(reencoded);
+		}
 		buf[size++] = '\n';
+
 		close(fd);
 		if (oid_stat) {
 			int pos;
@@ -1205,11 +1233,12 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 				oidcpy(&oid_stat->oid,
 				       &istate->cache[pos]->oid);
 			else
-				hash_object_file(the_hash_algo, buf, size,
+				hash_object_file(the_hash_algo, orig, orig_size,
 						 OBJ_BLOB, &oid_stat->oid);
 			fill_stat_data(&oid_stat->stat, &st);
 			oid_stat->valid = 1;
 		}
+		free(orig);
 	}
 
 	if (size > PATTERN_MAX_FILE_SIZE) {

@@ -963,4 +963,92 @@ test_expect_success EXPENSIVE 'large exclude file ignored in tree' '
 	test_cmp expect err
 '
 
+############################################################################
+#
+# test handling of unicode for .gitignore when BOM is preset or worktree encoding is set for the file
+
+supports_encoding () {
+  encoding="$1"
+  bom="$2"
+
+	test_when_finished rm -r a &&
+	mkdir -p a &&
+	touch a/file a/excluded &&
+	echo excluded > a/patterns &&
+	printf "$bom" > a/.gitignore &&
+  iconv --from-code="UTF-8" --to-code="$encoding" a/patterns >> a/.gitignore &&
+	git check-ignore a/excluded > actual &&
+	cat >expect <<-\EOF &&
+	a/excluded
+	EOF
+	test_cmp expect actual
+}
+
+test_expect_success 'Can read gitignore in UTF-8' '
+  supports_encoding "UTF-8"
+'
+
+test_expect_success 'Can read gitignore in UTF-16LE when given a BOM' '
+  supports_encoding "UTF-16LE" "\xFF\xFE"
+'
+
+test_expect_success 'Can read gitignore in UTF-16BE when given a BOM' '
+  supports_encoding "UTF-16BE" "\xFE\xFF"
+'
+
+test_expect_success 'Can read gitignore in UTF-32LE when given a BOM' '
+  supports_encoding "UTF-32LE" "\xFF\xFE\x00\x00"
+'
+
+test_expect_success 'Can read gitignore in UTF-32BE when given a BOM' '
+  supports_encoding "UTF-32BE" "\x00\x00\xFE\xFF"
+'
+
+supports_reading_ignore_in_working_tree_encoding () {
+  encoding="$1"
+
+	test_when_finished rm -r a &&
+	mkdir -p a &&
+	touch a/file a/excluded &&
+  echo ".gitignore		text working-tree-encoding=\"$encoding\"" > a/.gitattributes &&
+	echo excluded > a/patterns &&
+  iconv --from-code="UTF-8" --to-code="$encoding" a/patterns > a/.gitignore &&
+	git check-ignore a/excluded > actual &&
+	cat >expect <<-\EOF &&
+	a/excluded
+	EOF
+	test_cmp expect actual
+}
+
+test_expect_success 'Can read gitignore in UTF-8 when it is set as working tree encoding' '
+  supports_reading_ignore_in_working_tree_encoding "UTF-8"
+'
+
+test_expect_success 'Can read gitignore in UTF-16LE when it is set as working tree encoding' '
+  supports_reading_ignore_in_working_tree_encoding "UTF-16LE"
+'
+
+test_expect_success 'Can read gitignore in UTF-16BE when it is set as working tree encoding' '
+  supports_reading_ignore_in_working_tree_encoding "UTF-16BE"
+'
+
+test_expect_success 'Can read gitignore in UTF-32LE when it is set as working tree encoding' '
+  supports_reading_ignore_in_working_tree_encoding "UTF-32LE"
+'
+
+test_expect_success 'Can read gitignore in UTF-32BE when it is set as working tree encoding' '
+  supports_reading_ignore_in_working_tree_encoding "UTF-32BE"
+'
+
+test_expect_success 'Issues a warning if encoding cannot be deduced' '
+	test_when_finished rm -r a &&
+	mkdir -p a &&
+	touch a/file a/excluded &&
+	echo excluded > a/patterns &&
+  iconv --from-code="UTF-8" --to-code="UTF-16BE" a/patterns > a/.gitignore &&
+	! git check-ignore a/excluded > actual 2>&1 &&
+	echo "warning: Ignoring exclude file with unknown encoding: a/.gitignore" > expect &&
+	test_cmp expect actual
+'
+
 test_done
